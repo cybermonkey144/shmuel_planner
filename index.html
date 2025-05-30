@@ -1,0 +1,224 @@
+
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>בניית סיורים - מועצה אזורית שומרון</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/7.7.0/docx.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+</head>
+<body class="bg-gray-100 p-6">
+  <div class="max-w-5xl mx-auto bg-white shadow-lg rounded-lg p-6">
+    <h1 class="text-3xl font-bold mb-4 text-center">בניית סיורים - מועצה אזורית שומרון</h1>
+
+    <form id="tourForm" class="space-y-4">
+      <input type="text" id="tourName" placeholder="שם הסיור" class="border p-2 w-full" required>
+      <input type="date" id="tourDate" class="border p-2 w-full" required>
+      <input type="time" id="tourTime" class="border p-2 w-full" required>
+      <input type="text" id="tourGuide" placeholder="שם המדריך" class="border p-2 w-full" required>
+      <input type="number" id="participantsCount" placeholder="כמות משתתפים" min="1" class="border p-2 w-full" required>
+    </form>
+
+    <hr class="my-6">
+    <h2 class="text-xl font-semibold mb-2">הוספת יעדים</h2>
+    
+    <div class="flex flex-col md:flex-row gap-4 mb-4">
+      <select id="suggestedDestinations" class="border p-2 w-full">
+        <option value="">בחר יעד מומלץ</option>
+        <option value="הר ברכה - היובל">הר ברכה - היובל</option>
+        <option value="מצפה יוסף">מצפה יוסף</option>
+        <option value="מרפסת של המדינה">מרפסת של המדינה</option>
+        <option value="הר עיבל">הר עיבל</option>
+        <option value="שומרונים">שומרונים</option>
+        <option value="יקב כביר - אלון מורה">יקב כביר - אלון מורה</option>
+        <option value="מרכז מורשת - אלון מורה">מרכז מורשת - אלון מורה</option>
+        <option value="מפעל ברקן">מפעל ברקן</option>
+        <option value="יקב טורא - רחלים">יקב טורא - רחלים</option>
+        <option value="יקב הר ברכה">יקב הר ברכה</option>
+        <option value="סבסטיה">סבסטיה</option>
+        <option value="משפחה שכולה">משפחה שכולה</option>
+        <option value="הר כביר - אלון מורה">הר כביר - אלון מורה</option>
+        <option value="גבעות עולם">גבעות עולם</option>
+      </select>
+      <input type="number" id="suggestedDuration" placeholder="משך בדקות" class="border p-2 w-full">
+      <button onclick="addSuggestedDestination()" class="bg-green-600 text-white px-4 py-2 rounded">הוסף יעד מומלץ</button>
+    </div>
+
+<div class="flex flex-col md:flex-row gap-4 mb-4">
+      <input type="text" id="manualDestination" placeholder="שם יעד" class="border p-2 w-full">
+      <input type="number" id="manualDuration" placeholder="משך בדקות" class="border p-2 w-full">
+      <button onclick="addManualDestination()" class="bg-blue-500 text-white px-4 py-2 rounded">הוסף יעד</button>
+    </div>
+
+    
+    <div class="bg-gray-50 p-4 rounded mb-4">
+      <h3 class="font-semibold mb-2">רשימת יעדים:</h3>
+      <ul id="sortableList" class="list-disc list-inside space-y-1"></ul>
+    </div>
+
+<div class="bg-blue-50 p-4 rounded mb-4">
+      <h3 class="font-semibold mb-2">זמני נסיעה בין תחנות (בדקות):</h3>
+      <div id="travelInputs" class="space-y-2"></div>
+    </div>
+
+    <button onclick="finalizeTour()" class="bg-purple-600 text-white py-2 px-4 rounded w-full">סיים והצג סיכום</button>
+    <button onclick="saveAsWord()" class="bg-green-600 text-white py-2 px-4 rounded w-full mt-2">שמור לוורד</button>
+
+    <div id="tourOutput" class="mt-6 bg-green-100 p-4 rounded hidden"></div>
+  </div>
+
+  <script>
+    const destinations = [];
+    const travelTimes = [];
+
+    
+    function addSuggestedDestination() {
+      const name = document.getElementById('suggestedDestinations').value;
+      const duration = parseInt(document.getElementById('suggestedDuration').value);
+      if (name && duration > 0) {
+        destinations.push({ name, duration });
+        document.getElementById('suggestedDestinations').value = '';
+        document.getElementById('suggestedDuration').value = '';
+        updateSortableList();
+        updateTravelInputs();
+      }
+    }
+
+function addManualDestination() {
+      const name = document.getElementById('manualDestination').value;
+      const duration = parseInt(document.getElementById('manualDuration').value);
+      if (name && duration > 0) {
+        destinations.push({ name, duration });
+        document.getElementById('manualDestination').value = '';
+        document.getElementById('manualDuration').value = '';
+        updateTravelInputs();
+      }
+    }
+
+    
+    function updateSortableList() {
+      const list = document.getElementById('sortableList');
+      list.innerHTML = '';
+      destinations.forEach((dest, index) => {
+        const li = document.createElement('li');
+        li.textContent = `${index + 1}. ${dest.name} (${dest.duration} דקות)`;
+        li.setAttribute('data-index', index);
+        list.appendChild(li);
+      });
+    }
+
+function updateTravelInputs() {
+      const container = document.getElementById('travelInputs');
+      container.innerHTML = '';
+      travelTimes.length = destinations.length - 1;
+      for (let i = 0; i < destinations.length - 1; i++) {
+        const label = document.createElement('label');
+        label.className = 'block';
+        label.innerHTML = `מ-${destinations[i].name} אל-${destinations[i+1].name}: 
+          <input type="number" min="0" class="border p-1 ml-2 w-24" 
+          onchange="updateTravelTime(${i}, this.value)">`;
+        container.appendChild(label);
+      }
+    }
+
+    function updateTravelTime(index, value) {
+      travelTimes[index] = parseInt(value) || 0;
+    }
+
+    
+    Sortable.create(document.getElementById('sortableList'), {
+      animation: 150,
+      onEnd: function () {
+        const items = document.querySelectorAll('#sortableList li');
+        const newOrder = [];
+        items.forEach((li) => {
+          const index = parseInt(li.getAttribute('data-index'));
+          newOrder.push(destinations[index]);
+        });
+        destinations.length = 0;
+        newOrder.forEach((d) => destinations.push(d));
+        updateTravelInputs();
+      }
+    });
+
+function finalizeTour() {
+      const name = document.getElementById('tourName').value;
+      const date = document.getElementById('tourDate').value;
+      const time = document.getElementById('tourTime').value;
+      const guide = document.getElementById('tourGuide').value;
+      const participants = document.getElementById('participantsCount').value;
+      const output = document.getElementById('tourOutput');
+      if (!time) return;
+
+      let summary = `
+        <h2 class="text-xl font-bold mb-2">סיכום סיור</h2>
+        <p><strong>שם:</strong> ${name}</p>
+        <p><strong>תאריך:</strong> ${date}</p>
+        <p><strong>שעה:</strong> ${time}</p>
+        <p><strong>מדריך:</strong> ${guide}</p>
+        <p><strong>משתתפים:</strong> ${participants}</p>
+        <p><strong>תחנות:</strong></p>
+        <ul class="list-disc list-inside mb-2">
+      `;
+      let currentTime = new Date(`${date}T${time}:00`);
+      destinations.forEach((d, i) => {
+        let endTime = new Date(currentTime.getTime() + d.duration * 60000);
+        summary += `<li>${i + 1}. ${d.name}: ${formatTime(currentTime)} - ${formatTime(endTime)} (${d.duration} דקות)</li>`;
+        currentTime = endTime;
+        if (i < travelTimes.length) {
+          const travel = travelTimes[i] || 0;
+          let travelEnd = new Date(currentTime.getTime() + travel * 60000);
+          summary += `<li class="ml-6 text-sm text-gray-700">נסיעה: ${formatTime(currentTime)} - ${formatTime(travelEnd)} (${travel} דקות)</li>`;
+          currentTime = travelEnd;
+        }
+      });
+      summary += '</ul>';
+      output.innerHTML = summary;
+      output.classList.remove('hidden');
+    }
+
+    function formatTime(date) {
+      return date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    async function saveAsWord() {
+      const { Document, Packer, Paragraph, TextRun } = window.docx;
+      const doc = new Document();
+      const tourName = document.getElementById('tourName').value || 'סיור';
+      const date = document.getElementById('tourDate').value;
+      const time = document.getElementById('tourTime').value;
+      const guide = document.getElementById('tourGuide').value;
+      const participants = document.getElementById('participantsCount').value;
+
+      const paragraphs = [
+        new Paragraph({ children: [new TextRun({ text: `שם הסיור: ${tourName}`, bold: true })]}),
+        new Paragraph(`תאריך: ${date}`),
+        new Paragraph(`שעה: ${time}`),
+        new Paragraph(`מדריך: ${guide}`),
+        new Paragraph(`משתתפים: ${participants}`),
+        new Paragraph(''),
+        new Paragraph({ text: 'תחנות:', bold: true })
+      ];
+
+      let currentTime = new Date(`${date}T${time}:00`);
+      destinations.forEach((d, i) => {
+        let endTime = new Date(currentTime.getTime() + d.duration * 60000);
+        paragraphs.push(new Paragraph(`${i + 1}. ${d.name}: ${formatTime(currentTime)} - ${formatTime(endTime)} (${d.duration} דקות)`));
+        currentTime = endTime;
+        if (i < travelTimes.length) {
+          const travel = travelTimes[i] || 0;
+          let travelEnd = new Date(currentTime.getTime() + travel * 60000);
+          paragraphs.push(new Paragraph({ text: `  נסיעה: ${formatTime(currentTime)} - ${formatTime(travelEnd)} (${travel} דקות)`, spacing: { before: 100 } }));
+          currentTime = travelEnd;
+        }
+      });
+
+      const docFile = new Document({ sections: [{ properties: {}, children: paragraphs }] });
+      const blob = await Packer.toBlob(docFile);
+      saveAs(blob, `${tourName.replace(/\s+/g, '_')}_tour.docx`);
+    }
+  </script>
+</body>
+</html>
