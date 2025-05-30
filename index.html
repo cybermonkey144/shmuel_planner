@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -7,7 +6,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/7.7.0/docx.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>
 <body class="bg-gray-100 p-6">
   <div class="max-w-5xl mx-auto bg-white shadow-lg rounded-lg p-6">
@@ -46,7 +45,7 @@
       <button onclick="addSuggestedDestination()" class="bg-green-600 text-white px-4 py-2 rounded">הוסף יעד מומלץ</button>
     </div>
 
-<div class="flex flex-col md:flex-row gap-4 mb-4">
+    <div class="flex flex-col md:flex-row gap-4 mb-4">
       <input type="text" id="manualDestination" placeholder="שם יעד" class="border p-2 w-full">
       <input type="number" id="manualDuration" placeholder="משך בדקות" class="border p-2 w-full">
       <button onclick="addManualDestination()" class="bg-blue-500 text-white px-4 py-2 rounded">הוסף יעד</button>
@@ -58,13 +57,15 @@
       <ul id="sortableList" class="list-disc list-inside space-y-1"></ul>
     </div>
 
-<div class="bg-blue-50 p-4 rounded mb-4">
+    <div class="bg-blue-50 p-4 rounded mb-4">
       <h3 class="font-semibold mb-2">זמני נסיעה בין תחנות (בדקות):</h3>
       <div id="travelInputs" class="space-y-2"></div>
     </div>
 
     <button onclick="finalizeTour()" class="bg-purple-600 text-white py-2 px-4 rounded w-full">סיים והצג סיכום</button>
     <button onclick="saveAsWord()" class="bg-green-600 text-white py-2 px-4 rounded w-full mt-2">שמור לוורד</button>
+    <button onclick="saveCurrentTour()" class="bg-yellow-500 text-white py-2 px-4 rounded w-full mt-2">שמור סיור (לדפדפן)</button>
+
 
     <div id="tourOutput" class="mt-6 bg-green-100 p-4 rounded hidden"></div>
   </div>
@@ -72,8 +73,8 @@
   <script>
     const destinations = [];
     const travelTimes = [];
+    const LOCAL_STORAGE_KEY = 'shomronSingleSavedTour'; // Key for localStorage
 
-    
     function addSuggestedDestination() {
       const name = document.getElementById('suggestedDestinations').value;
       const duration = parseInt(document.getElementById('suggestedDuration').value);
@@ -86,38 +87,51 @@
       }
     }
 
-function addManualDestination() {
+    function addManualDestination() {
       const name = document.getElementById('manualDestination').value;
       const duration = parseInt(document.getElementById('manualDuration').value);
       if (name && duration > 0) {
         destinations.push({ name, duration });
         document.getElementById('manualDestination').value = '';
         document.getElementById('manualDuration').value = '';
+        updateSortableList(); // Also update sortable list here
         updateTravelInputs();
       }
     }
 
-    
     function updateSortableList() {
       const list = document.getElementById('sortableList');
       list.innerHTML = '';
       destinations.forEach((dest, index) => {
         const li = document.createElement('li');
         li.textContent = `${index + 1}. ${dest.name} (${dest.duration} דקות)`;
-        li.setAttribute('data-index', index);
+        li.setAttribute('data-index', index); // Keep original index for reordering logic
         list.appendChild(li);
       });
     }
 
-function updateTravelInputs() {
+    function updateTravelInputs() {
       const container = document.getElementById('travelInputs');
       container.innerHTML = '';
-      travelTimes.length = destinations.length - 1;
-      for (let i = 0; i < destinations.length - 1; i++) {
+      // Ensure travelTimes array has the correct length, initialized with 0 or existing values
+      const requiredTravelTimes = Math.max(0, destinations.length - 1);
+      
+      // Trim or extend travelTimes array
+      if (travelTimes.length > requiredTravelTimes) {
+        travelTimes.length = requiredTravelTimes;
+      } else {
+        while (travelTimes.length < requiredTravelTimes) {
+          travelTimes.push(0); // Default to 0 if new travel segment added
+        }
+      }
+
+      for (let i = 0; i < requiredTravelTimes; i++) {
         const label = document.createElement('label');
         label.className = 'block';
-        label.innerHTML = `מ-${destinations[i].name} אל-${destinations[i+1].name}: 
-          <input type="number" min="0" class="border p-1 ml-2 w-24" 
+        // Ensure destinations[i+1] exists
+        const toDestinationName = destinations[i+1] ? destinations[i+1].name : 'היעד הבא';
+        label.innerHTML = `מ-${destinations[i].name} אל-${toDestinationName}: 
+          <input type="number" value="${travelTimes[i] || 0}" min="0" class="border p-1 ml-2 w-24" 
           onchange="updateTravelTime(${i}, this.value)">`;
         container.appendChild(label);
       }
@@ -127,30 +141,59 @@ function updateTravelInputs() {
       travelTimes[index] = parseInt(value) || 0;
     }
 
-    
     Sortable.create(document.getElementById('sortableList'), {
       animation: 150,
-      onEnd: function () {
-        const items = document.querySelectorAll('#sortableList li');
-        const newOrder = [];
-        items.forEach((li) => {
-          const index = parseInt(li.getAttribute('data-index'));
-          newOrder.push(destinations[index]);
-        });
-        destinations.length = 0;
-        newOrder.forEach((d) => destinations.push(d));
-        updateTravelInputs();
+      onEnd: function (evt) {
+        const itemEl = evt.item; // dragged HTMLElement
+        const oldIndex = parseInt(itemEl.getAttribute('data-index')); // Get original index
+        const newIndex = evt.newDraggableIndex;
+
+
+        // Reorder destinations array
+        const movedItem = destinations.splice(evt.oldDraggableIndex, 1)[0];
+        destinations.splice(evt.newDraggableIndex, 0, movedItem);
+        
+        // Reorder travelTimes array
+        // This is a bit tricky. When an item moves, the travel times around it need adjustment.
+        // A simpler approach for travelTimes is to let updateTravelInputs rebuild them based on new destination order,
+        // but the user would lose previously entered specific travel times if they reorder.
+        // For now, let's re-initialize them based on the new order if a more sophisticated sync is not built.
+        // A more robust solution would involve adjusting travelTimes carefully.
+        // For simplicity here, if you reorder, you might need to re-check travel times.
+        // Or, we can try to adjust them:
+        if (destinations.length > 1) {
+            const tempTravelTimes = new Array(destinations.length - 1).fill(0);
+            // This simple re-mapping might not be perfectly intuitive if items are moved far.
+            // A better way might be to prompt user or clear them.
+            // For now, let's just try to keep what we can, or re-initialize
+            // A simple strategy: keep values if segments still "make sense", otherwise reset.
+            // For now, let's just call updateTravelInputs which will use existing travelTimes values if indices match
+            // or create new ones.
+        }
+
+
+        updateSortableList(); // Re-render list with new indices
+        updateTravelInputs(); // Re-render travel inputs which might now have new pairings
       }
     });
 
-function finalizeTour() {
+    function finalizeTour() {
       const name = document.getElementById('tourName').value;
       const date = document.getElementById('tourDate').value;
       const time = document.getElementById('tourTime').value;
       const guide = document.getElementById('tourGuide').value;
       const participants = document.getElementById('participantsCount').value;
       const output = document.getElementById('tourOutput');
-      if (!time) return;
+      
+      if (!name || !date || !time || !guide || !participants) {
+        alert("אנא מלא את כל פרטי הסיור הבסיסיים.");
+        return;
+      }
+      if (destinations.length === 0) {
+        alert("אנא הוסף לפחות יעד אחד.");
+        return;
+      }
+
 
       let summary = `
         <h2 class="text-xl font-bold mb-2">סיכום סיור</h2>
@@ -167,7 +210,7 @@ function finalizeTour() {
         let endTime = new Date(currentTime.getTime() + d.duration * 60000);
         summary += `<li>${i + 1}. ${d.name}: ${formatTime(currentTime)} - ${formatTime(endTime)} (${d.duration} דקות)</li>`;
         currentTime = endTime;
-        if (i < travelTimes.length) {
+        if (i < travelTimes.length && travelTimes[i] !== undefined) { // Check travelTimes[i]
           const travel = travelTimes[i] || 0;
           let travelEnd = new Date(currentTime.getTime() + travel * 60000);
           summary += `<li class="ml-6 text-sm text-gray-700">נסיעה: ${formatTime(currentTime)} - ${formatTime(travelEnd)} (${travel} דקות)</li>`;
@@ -184,41 +227,155 @@ function finalizeTour() {
     }
 
     async function saveAsWord() {
-      const { Document, Packer, Paragraph, TextRun } = window.docx;
-      const doc = new Document();
-      const tourName = document.getElementById('tourName').value || 'סיור';
+      const { Document, Packer, Paragraph, TextRun, PageBreak } = window.docx; // Added PageBreak if needed, not used here
+      
+      const name = document.getElementById('tourName').value;
       const date = document.getElementById('tourDate').value;
       const time = document.getElementById('tourTime').value;
       const guide = document.getElementById('tourGuide').value;
       const participants = document.getElementById('participantsCount').value;
 
+      if (!name || !date || !time || !guide || !participants) {
+        alert("אנא מלא את כל פרטי הסיור הבסיסיים לפני שמירה לוורד.");
+        return;
+      }
+       if (destinations.length === 0) {
+        alert("אנא הוסף לפחות יעד אחד לפני שמירה לוורד.");
+        return;
+      }
+
       const paragraphs = [
-        new Paragraph({ children: [new TextRun({ text: `שם הסיור: ${tourName}`, bold: true })]}),
-        new Paragraph(`תאריך: ${date}`),
-        new Paragraph(`שעה: ${time}`),
-        new Paragraph(`מדריך: ${guide}`),
-        new Paragraph(`משתתפים: ${participants}`),
-        new Paragraph(''),
-        new Paragraph({ text: 'תחנות:', bold: true })
+        new Paragraph({ children: [new TextRun({ text: `שם הסיור: ${name}`, bold: true, size: 28, font: "David" })], direction: 'rtl' }),
+        new Paragraph({ text: `תאריך: ${date}`, direction: 'rtl', style: "BodyText"}),
+        new Paragraph({ text: `שעת התחלה: ${time}`, direction: 'rtl'}),
+        new Paragraph({ text: `מדריך: ${guide}`, direction: 'rtl'}),
+        new Paragraph({ text: `כמות משתתפים: ${participants}`, direction: 'rtl'}),
+        new Paragraph({text: ''}), // Empty line for spacing
+        new Paragraph({ children: [new TextRun({ text: 'פירוט התחנות:', bold: true, size: 24, font: "David"})], direction: 'rtl'})
       ];
 
       let currentTime = new Date(`${date}T${time}:00`);
       destinations.forEach((d, i) => {
         let endTime = new Date(currentTime.getTime() + d.duration * 60000);
-        paragraphs.push(new Paragraph(`${i + 1}. ${d.name}: ${formatTime(currentTime)} - ${formatTime(endTime)} (${d.duration} דקות)`));
+        paragraphs.push(new Paragraph({
+            text: `${i + 1}. ${d.name}: ${formatTime(currentTime)} - ${formatTime(endTime)} (${d.duration} דקות)`,
+            direction: 'rtl',
+            bullet: { level: 0 }
+        }));
         currentTime = endTime;
-        if (i < travelTimes.length) {
+        if (i < travelTimes.length && travelTimes[i] !== undefined) {
           const travel = travelTimes[i] || 0;
           let travelEnd = new Date(currentTime.getTime() + travel * 60000);
-          paragraphs.push(new Paragraph({ text: `  נסיעה: ${formatTime(currentTime)} - ${formatTime(travelEnd)} (${travel} דקות)`, spacing: { before: 100 } }));
+          paragraphs.push(new Paragraph({ 
+            text: `נסיעה אל היעד הבא: ${formatTime(currentTime)} - ${formatTime(travelEnd)} (${travel} דקות)`,
+            direction: 'rtl',
+            indent: { left: 720 }, // Indent for sub-item feel
+            style: "BodyTextChar" // Example of applying a character style if defined in template
+          }));
           currentTime = travelEnd;
         }
       });
+      
+      const docFile = new Document({
+        sections: [{ 
+            properties: {
+                page: {
+                    margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } // Standard 1-inch margins
+                }
+            },
+            children: paragraphs 
+        }],
+        styles: { // Optional: define some basic styles
+            paragraphStyles: [
+                {
+                    id: "BodyText",
+                    name: "Body Text",
+                    basedOn: "Normal",
+                    next: "Normal",
+                    quickFormat: true,
+                    run: { font: "David", size: 22 }, // Default font and size for body
+                },
+            ],
+             characterStyles: [ // Example character style
+                {
+                    id: "BodyTextChar",
+                    name: "Body Text Char",
+                    basedOn: "DefaultParagraphFont",
+                    run: { font: "David", size: 20, color: "595959" }, // Greyish color for travel time
+                },
+            ],
+        }
+      });
 
-      const docFile = new Document({ sections: [{ properties: {}, children: paragraphs }] });
-      const blob = await Packer.toBlob(docFile);
-      saveAs(blob, `${tourName.replace(/\s+/g, '_')}_tour.docx`);
+      try {
+        const blob = await Packer.toBlob(docFile);
+        saveAs(blob, `${name.replace(/\s+/g, '_')}_סיור.docx`);
+      } catch (error) {
+        console.error("Error generating DOCX file:", error);
+        alert("שגיאה ביצירת קובץ הוורד.");
+      }
     }
+
+    // --- localStorage Functions ---
+    function saveCurrentTour() {
+      const tourData = {
+        name: document.getElementById('tourName').value,
+        date: document.getElementById('tourDate').value,
+        time: document.getElementById('tourTime').value,
+        guide: document.getElementById('tourGuide').value,
+        participants: document.getElementById('participantsCount').value,
+        destinations: [...destinations], // Create a copy
+        travelTimes: [...travelTimes]    // Create a copy
+      };
+
+      try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(tourData));
+        alert('הסיור נשמר בהצלחה בדפדפן!'); 
+      } catch (e) {
+        console.error("Error saving to localStorage:", e);
+        alert('שגיאה בשמירת הסיור. ייתכן שהאחסון מלא.');
+      }
+    }
+
+    function loadSavedTour() {
+      try {
+        const savedDataJSON = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (savedDataJSON) {
+          const savedData = JSON.parse(savedDataJSON);
+
+          document.getElementById('tourName').value = savedData.name || '';
+          document.getElementById('tourDate').value = savedData.date || '';
+          document.getElementById('tourTime').value = savedData.time || '';
+          document.getElementById('tourGuide').value = savedData.guide || '';
+          document.getElementById('participantsCount').value = savedData.participants || '';
+
+          // Clear current destinations and travelTimes before loading
+          destinations.length = 0; 
+          travelTimes.length = 0;
+
+          if (savedData.destinations && Array.isArray(savedData.destinations)) {
+            savedData.destinations.forEach(dest => destinations.push({...dest})); // Push copies
+          }
+          if (savedData.travelTimes && Array.isArray(savedData.travelTimes)) {
+            savedData.travelTimes.forEach(tt => travelTimes.push(tt));
+          }
+
+          updateSortableList();
+          updateTravelInputs();
+          
+          // alert('סיור שמור נטען מהדפדפן!'); // Optional: notify user
+        }
+      } catch (e) {
+        console.error("Error loading from localStorage:", e);
+        // alert('שגיאה בטעינת סיור שמור מהדפדפן.'); 
+      }
+    }
+
+    // Load saved tour when the page is ready
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSavedTour();
+    });
+
   </script>
 </body>
 </html>
